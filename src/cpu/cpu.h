@@ -15,14 +15,14 @@
 #define F_N  (1 << 1)
 #define F_O (1 << 0)
 
-#define R_ZERO  0
-#define R_RV    1
-#define R_A0    2
-#define R_A1    3
-#define R_T0    4
-#define R_T1    5
-#define R_S0    6
-#define R_S1    7
+#define R0  0  // hardwired zero
+#define R1  1  // return value
+#define R2  2  // argument 0
+#define R3  3  // argument 1
+#define R4  4  // temporary 0
+#define R5  5  // temporary 1
+#define R6  6  // saved 0
+#define R7  7  // saved 1
 
 typedef struct CPU {
     uint16_t regs[CPU_REGS];
@@ -40,10 +40,14 @@ static inline uint16_t readReg(CPU *cpu, uint8_t reg){
 }
 
 static inline void writeReg(CPU *cpu, uint8_t reg, uint16_t value){
-    if(reg != R_ZERO){
+    if(reg != R0){
         cpu->regs[reg & 0x07] = value;
     }
-    // silently ignore writes to R_ZERO
+    // silently ignore writes to R0
+}
+
+static inline int16_t sext5(uint8_t imm5){
+    return (imm5 & 0x10) ? (int16_t)(imm5 | 0xFFE0) : (int16_t)imm5;
 }
 
 #endif // CPU_H
