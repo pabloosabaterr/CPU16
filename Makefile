@@ -1,2 +1,5 @@
+CC = gcc
+CFLAGS = -Wall -Wextra -pedantic -Werror
+
 all:
-	gcc -o output src/main.c src/cpu/cpu.c
+	$(CC) $(CFLAGS) -o output src/main.c src/cpu/cpu.c

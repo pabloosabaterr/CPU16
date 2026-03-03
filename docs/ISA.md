@@ -1,25 +1,52 @@
 # ISA
 
-16 bit cpu
-mapped byte to byte
-16 bit buses
+| [Architecture](#1-architecture) | [Instructions](#2-instructions) | [Op Codes](#3-op-codes) | [Flags](#4-flags) |
 
-## Instructions
+## 1. Architecture
+
+- 16-bit architecture
+- 8 general purpose registers (R0-R7) 
+> R0 is always 0 and cannot be written to
+- 16-bit address space (64KB)
+- Little-endian
+- Stack grows downwards
+- dedicated flags register with 4 flags: Zero (Z), Sign (S), Carry (C), Overflow (O)
+- dedicated registers: PC (program counter), SP (stack pointer)
+
+### 1.1 Memory Map
+
+- PC starts at 0x0000
+- SP starts at 0xFFFE
+
+## 2. Instructions
 
 ```
-RIJ
-R: 5 bit opcode, 3 bit reg a, 3 bit reg b, 3 bit reg c 2 padding
-I: 5 bit opcode, 3 bit reg a, 3 bit reg b, 5 bit imm
-J: 5 bit opcode, 11 bit imm
+R  :  5 bit opcode, 3 bit reg a, 3 bit reg b, 3 bit reg c 2 option flags 
+I  :  5 bit opcode, 3 bit reg a, 3 bit reg b, 5 bit imm
+IL :  5 bit opcode, 3 bit reg a, 8 bit imm
+J  :  5 bit opcode, 11 bit imm
 ```
-1. R instructions:
-    - ADD, SUB, AND, OR, XOR, SHL, SHR, MUL, CMP, NOT, NEG
-2. I instructions:
-    - LOAD, STORE, PUSH, POP, ADDI, SUBI
-3. J instructions:
-    - NOP, HALT
+### 2.1 Option bits
 
-## Op Codes
+Option bits are used for logical vs arithmetich shifts.
+```
+00 : logical shift
+01 : arithmetic shift
+```
+### 2.2 Instruction set
+
+1. **R instructions**:
+    - `ADD, SUB, AND, OR, XOR, SHL, SHR, MUL, CMP, NOT, NEG`
+2. **I instructions**:
+    - `ADDI, SUBI, LOAD, STORE`
+    
+3. **IL instructions**:
+    - `LUI, ORI, CALL, JUMP, PUSH, POP`
+
+4. **J instructions**:
+    - `NOP, HALT, RET, JEQ, JNE, JLT, JGT`
+
+## 3. Op Codes
 
 ```
 ADD    00000  0x00 : ra = rb + rc
@@ -29,16 +56,76 @@ OR     00011  0x03 : ra = rb | rc
 XOR    00100  0x04 : ra = rb ^ rc
 SHL    00101  0x05 : ra = rb << (rc & 0xF)
 SHR    00110  0x06 : ra = rb >> (rc & 0xF)
-MUL    00111  0x07 : ra = rb * rc
-CMP    01000  0x08 : not implemented
+MUL    00111  0x07 : ra = low 16 bits, (ra + 1) = high 16 bit of rb * rc
+CMP    01000  0x08 : update flags based on rb - rc
 NOT    01001  0x09 : ra = ~rb
 NEG    01010  0x0A : ra = -rb
-LOAD   01011  0x0B : not implemented
-STORE  01100  0x0C : not implemented
-PUSH   01101  0x0D : not implemented
-POP    01110  0x0E : not implemented
+LOAD   01011  0x0B : ra = mem[rb + sext(imm5)]
+STORE  01100  0x0C : mem[ra + sext(imm5)] = rb
+PUSH   01101  0x0D : SP -= 2; (SP) = ra
+POP    01110  0x0E : ra = (SP); SP += 2
 ADDI   01111  0x0F : ra = rb + sext(imm5)
 SUBI   10000  0x10 : ra = rb - sext(imm5)
+LUI    10001  0x11 : ra = imm8 << 8
+ORI    10010  0x12 : ra = ra | imm8
+CALL   10011  0x13 : PUSH PC; PC = ra
+RET    10100  0x14 : POP PC
+JUMP   10101  0x15 : PC = ra
+JEQ    10110  0x16 : if(Z) PC = PC + sext(imm11)
+JNE    10111  0x17 : if(!Z) PC = PC + sext(imm11)
+JLT    11000  0x18 : if(S != 0) PC = PC + sext(imm11)
+JGT    11001  0x19 : if(!Z && S == 0) PC = PC + sext(imm11)
 NOP    11110  0x1E : nothing
 HALT   11111  0x1F : stop
 ```
+### 3.1 MUL instruction
+
+`MUL` will lose upper bits if reg is `R7` because `R7 + 1` becomes `R0` wich cannot be written to. Using `R7` will only produce lower 16 bits.
+
+### 3.2 LUI and ORI instructions
+
+>`LUI` `ORI` inspired on mips, designed to work together. They do not update flags.
+
+### 3.3 JUMP and CALL instructions
+
+`CALL` pushes `PC + 2`, `RET` returns to the instruction after the call.
+
+Because max imm on instructions is 8 bits with IL, `JUMP` and `CALL` have very little range to jump. To fix this, both instructions use registers storing the address. They can be used with `LUI` and `ORI` to build a full 16 bit address.
+
+Conditional branches use PC-relative addressing with word-aligned offsets: `PC = PC + (sext(imm11) << 1)`. Since all instructions are 2 bytes, the offset is in units of instructions, not bytes. This gives a range of ±1024 instructions (±2048 bytes) from the current PC.
+
+## 4. Flags
+
+Flags are a 4 bit register updated after operations.
+
+```
+Zero     1000 if result is zero
+Carry    0100 if there was a carry or borrow
+Sign     0010 if result is negative
+Overflow 0001 if there was a signed overflow
+```
+
+
+| Instruction | Z | S | C | O | Notes |
+|-|-|-|-|-|-|
+| ADD   | Yes | Yes | Yes | Yes |  
+| SUB   | Yes | Yes | Yes | Yes |  
+| ADDI  | Yes | Yes | Yes | Yes |  
+| SUBI  | Yes | Yes | Yes | Yes |  
+| CMP   | Yes | Yes | Yes | Yes | no writeback |
+| AND   | Yes | Yes |  -  |  -  |       
+| OR    | Yes | Yes |  -  |  -  |     
+| XOR   | Yes | Yes |  -  |  -  |
+| NOT   | Yes | Yes |  -  |  -  |
+| SHL   | Yes | Yes | Yes |  -  | C set if bits shifted out |
+| SHR   | Yes | Yes | Yes |  -  | C = last shifted-out bit |
+| MUL   | Yes | Yes |  -  |  -  | Z if fullRes == 0, S from high bits |
+| NEG   | Yes | Yes | Yes | Yes | C if operand != 0, O if 0x8000 |
+| LOAD  |  -  |  -  |  -  |  -  |
+| STORE |  -  |  -  |  -  |  -  |  
+| PUSH  |  -  |  -  |  -  |  -  |   
+| POP   |  -  |  -  |  -  |  -  |   
+| LUI   |  -  |  -  |  -  |  -  |    
+| ORI   |  -  |  -  |  -  |  -  | 
+| NOP   |  -  |  -  |  -  |  -  |      
+| HALT  |  -  |  -  |  -  |  -  |    
