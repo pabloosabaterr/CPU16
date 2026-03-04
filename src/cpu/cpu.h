@@ -8,7 +8,7 @@
 #include <string.h>
 
 #define CPU_REGS 8
-#define CPU_MEM_SIZE (2 << 16) // 64KB
+#define CPU_MEM_SIZE (1 << 16) // 64KB
 #define SP_START 0xFFF0
 
 // memory map
