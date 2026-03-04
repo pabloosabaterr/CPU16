@@ -5,20 +5,40 @@
 #include <assert.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <string.h>
 
 #define CPU_REGS 8
-#define CPU_MEM_SIZE 2 << 16 // 64KB
-#define PC_START 0x0000
-#define SP_START 0xFFFE
+#define CPU_MEM_SIZE (2 << 16) // 64KB
+#define SP_START 0xFFF0
+
+// memory map
+#define USER_START 0x0200
+#define HANDLER_ADDR 0x0100
+
+// MODES
+#define MUSER 1
+#define MKERNEL 0
+
+// IO
+#define IO_UART_DATA 0xFFF0 // & base
+#define IO_NUM_DATA 0xFFF4
 
 #define ADD_OVERFLOW(b, c, res) ((~(b ^ c) & (b ^ res)) & 0x8000)
 #define SUB_OVERFLOW(b, c, res) (((b ^ c) & (b ^ res)) & 0x8000)
 
+// CAUSES
+#define CSYSCALL 0
+#define CILL_OP 1
+#define CDIV_ZERO 2
+#define CMEM_FAULT 3
+
+//FLAGS
 #define F_Z (1 << 3) // zero 
 #define F_C (1 << 2) // carry
 #define F_N  (1 << 1) // sign
 #define F_O (1 << 0) // overflow 
 
+//REGISTERS
 #define R0  0  // hardwired zero
 #define R1  1  // return value
 #define R2  2  // argument 0
@@ -33,11 +53,21 @@ typedef struct CPU {
     uint16_t PC;
     uint16_t SP;
     uint8_t flags;
+    uint16_t EPC; // saves PC on exception
+    uint8_t cause;
+    bool status; // 0 kernel, 1 user
 } CPU;
 
 void init(CPU *restrict cpu);
-
 int32_t step(CPU *restrict cpu, uint8_t *restrict mem);
+void loadFirm(uint8_t *restrict mem);
+
+static inline void trap(CPU *restrict cpu, uint8_t cause){
+    cpu->EPC = cpu->PC;
+    cpu->cause = cause;
+    cpu->status = 0;
+    cpu->PC = HANDLER_ADDR;
+}
 
 static inline uint16_t readReg(CPU *restrict cpu, uint8_t reg){
     return cpu->regs[reg & 0x07];

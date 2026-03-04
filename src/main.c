@@ -18,8 +18,10 @@ int main(int argc, char *argv[]) {
     CPU cpu;
     uint8_t mem[CPU_MEM_SIZE] = {0};
     init(&cpu);
+    loadFirm(mem);
 
-    size_t n = fread(mem, 1, CPU_MEM_SIZE, f);
+    size_t max = CPU_MEM_SIZE - USER_START;
+    size_t n = fread(mem + USER_START, 1, max, f);
     fclose(f);
 
     if(n == 0){
