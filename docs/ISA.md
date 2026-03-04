@@ -28,20 +28,27 @@ J  :  5 bit opcode, 11 bit imm
 ```
 ### 2.1 Option bits
 
-Option bits are used for logical vs arithmetich shifts.
+Option bits are used to change the behavior of operations.
 ```
+(SHL, SHR)
 00 : logical shift
 01 : arithmetic shift
+
+(DIV)
+x0 : unsigned division
+x1 : signed division
+0x : flags from quotient
+1x : flags from remainder
 ```
 ### 2.2 Instruction set
 
 1. **R instructions**:
-    - `ADD, SUB, AND, OR, XOR, SHL, SHR, MUL, CMP, NOT, NEG`
+    - `ADD, SUB, AND, OR, XOR, SHL, SHR, MUL, NOT, NEG, DIV`
 2. **I instructions**:
     - `ADDI, SUBI, LOAD, STORE`
     
 3. **IL instructions**:
-    - `LUI, ORI, CALL, JUMP, PUSH, POP`
+    - `LUI, ORI, CALL, JUMP, PUSH, POP, CMP, CMPI, ANDI, TST`
 
 4. **J instructions**:
     - `NOP, HALT, RET, JEQ, JNE, JLT, JGT`
@@ -57,7 +64,7 @@ XOR    00100  0x04 : ra = rb ^ rc
 SHL    00101  0x05 : ra = rb << (rc & 0xF)
 SHR    00110  0x06 : ra = rb >> (rc & 0xF)
 MUL    00111  0x07 : ra = low 16 bits, (ra + 1) = high 16 bit of rb * rc
-CMP    01000  0x08 : update flags based on rb - rc
+CMP    01000  0x08 : update flags based on ra - rb
 NOT    01001  0x09 : ra = ~rb
 NEG    01010  0x0A : ra = -rb
 LOAD   01011  0x0B : ra = mem[rb + sext(imm5)]
@@ -75,12 +82,19 @@ JEQ    10110  0x16 : if(Z) PC = PC + sext(imm11)
 JNE    10111  0x17 : if(!Z) PC = PC + sext(imm11)
 JLT    11000  0x18 : if(S != 0) PC = PC + sext(imm11)
 JGT    11001  0x19 : if(!Z && S == 0) PC = PC + sext(imm11)
+DIV    11010  0x1A : ra = rb / rc, (ra + 1) = rb % rc
+ANDI   11011  0x1B : ra = ra & imm8
+TST    11100  0x1C : update flags based on ra & rb, no writeback
+CMPI   11101  0x1D : update flags based on ra - sext(imm8), no writeback
 NOP    11110  0x1E : nothing
 HALT   11111  0x1F : stop
 ```
-### 3.1 MUL instruction
+### 3.1 MUL & DIV instruction
 
 `MUL` will lose upper bits if reg is `R7` because `R7 + 1` becomes `R0` wich cannot be written to. Using `R7` will only produce lower 16 bits.
+
+`DIV` will write the quotient to `ra` and the remainder, only and only if `ra` is not `R7`, will be written to `ra + 1`. If `ra` is `R7`, the remainder will be lost. Using `R7` will only produce the quotient.
+> Flags for `DIV` can be set to quotient or remainder with the option bits. Auto set to quotient if `ra` is `R7` since remainder is lost.
 
 ### 3.2 LUI and ORI instructions
 
@@ -108,24 +122,35 @@ Overflow 0001 if there was a signed overflow
 
 | Instruction | Z | S | C | O | Notes |
 |-|-|-|-|-|-|
-| ADD   | Yes | Yes | Yes | Yes |  
-| SUB   | Yes | Yes | Yes | Yes |  
-| ADDI  | Yes | Yes | Yes | Yes |  
-| SUBI  | Yes | Yes | Yes | Yes |  
-| CMP   | Yes | Yes | Yes | Yes | no writeback |
-| AND   | Yes | Yes |  -  |  -  |       
-| OR    | Yes | Yes |  -  |  -  |     
-| XOR   | Yes | Yes |  -  |  -  |
-| NOT   | Yes | Yes |  -  |  -  |
+| ADD   | Yes | Yes | Yes | Yes |  |
+| SUB   | Yes | Yes | Yes | Yes |  |
+| AND   | Yes | Yes |  -  |  -  |  |
+| OR    | Yes | Yes |  -  |  -  |  |
+| XOR   | Yes | Yes |  -  |  -  |  |
 | SHL   | Yes | Yes | Yes |  -  | C set if bits shifted out |
 | SHR   | Yes | Yes | Yes |  -  | C = last shifted-out bit |
 | MUL   | Yes | Yes |  -  |  -  | Z if fullRes == 0, S from high bits |
+| CMP   | Yes | Yes | Yes | Yes | no writeback |
+| NOT   | Yes | Yes |  -  |  -  |  |
 | NEG   | Yes | Yes | Yes | Yes | C if operand != 0, O if 0x8000 |
-| LOAD  |  -  |  -  |  -  |  -  |
-| STORE |  -  |  -  |  -  |  -  |  
-| PUSH  |  -  |  -  |  -  |  -  |   
-| POP   |  -  |  -  |  -  |  -  |   
-| LUI   |  -  |  -  |  -  |  -  |    
-| ORI   |  -  |  -  |  -  |  -  | 
-| NOP   |  -  |  -  |  -  |  -  |      
-| HALT  |  -  |  -  |  -  |  -  |    
+| LOAD  |  -  |  -  |  -  |  -  |  |
+| STORE |  -  |  -  |  -  |  -  |  |
+| PUSH  |  -  |  -  |  -  |  -  |  |
+| POP   |  -  |  -  |  -  |  -  |  |
+| ADDI  | Yes | Yes | Yes | Yes |  |
+| SUBI  | Yes | Yes | Yes | Yes |  |
+| LUI   |  -  |  -  |  -  |  -  |  |
+| ORI   |  -  |  -  |  -  |  -  |  |
+| CALL  |  -  |  -  |  -  |  -  |  |
+| RET   |  -  |  -  |  -  |  -  |  |
+| JUMP  |  -  |  -  |  -  |  -  |  |
+| JEQ   |  -  |  -  |  -  |  -  |  |
+| JNE   |  -  |  -  |  -  |  -  |  |
+| JLT   |  -  |  -  |  -  |  -  |  |
+| JGT   |  -  |  -  |  -  |  -  |  |
+| DIV   | Yes | Yes |  -  |  -  | flags can be set to quotient or remainder |
+| ANDI  | Yes | Yes |  -  |  -  |  |
+| TST   | Yes | Yes |  -  |  -  | no writeback |
+| CMPI  | Yes | Yes | Yes | Yes | no writeback |
+| NOP   |  -  |  -  |  -  |  -  |  |
+| HALT  |  -  |  -  |  -  |  -  |  |   

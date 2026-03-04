@@ -26,6 +26,8 @@ int32_t step(CPU *restrict cpu, uint8_t *restrict mem){
     uint8_t imm5 = inst & 0x1F;
     // 8 bits immediate value (for IL instructions)
     uint8_t imm8 = inst;
+    // 11 bits immediate value (for conditional branches)
+    uint16_t imm11 = inst & 0x7FF;
     // 2 option bits 
     uint8_t option = inst & 0x03;
     
@@ -121,11 +123,11 @@ int32_t step(CPU *restrict cpu, uint8_t *restrict mem){
         }
         case 0x08: {
             // CMP
+            uint16_t a = readReg(cpu, ra);
             uint16_t b = readReg(cpu, rb);
-            uint16_t c = readReg(cpu, rc);
-            uint32_t fullRes = (uint32_t)b - c;
+            uint32_t fullRes = (uint32_t)a - b;
             uint16_t res = (uint16_t)fullRes;
-            setFlags(cpu, res, fullRes, SUB_OVERFLOW(b, c, res));
+            setFlags(cpu, res, fullRes, SUB_OVERFLOW(a, b, res));
             break;
         }
         case 0x09: {
@@ -203,8 +205,103 @@ int32_t step(CPU *restrict cpu, uint8_t *restrict mem){
         case 0x12: {
             // ORI
             uint16_t a = readReg(cpu, ra);
-            uint16_t res = a | (imm8 << 8);
+            uint16_t res = a | imm8;
             writeReg(cpu, ra, res);
+            break;
+        }
+        case 0X13: {
+            // CALL
+            cpu->SP -= 2;
+            mem[cpu->SP] = cpu->PC;
+            mem[cpu->SP + 1] = cpu->PC >> 8;
+            cpu->PC = readReg(cpu, ra);
+            break;
+        }
+        case 0x14: {
+            // RET
+            cpu->PC = mem[cpu->SP] | (mem[cpu->SP + 1] << 8);
+            cpu->SP += 2;
+            break;
+        }
+        case 0x15: {
+            // JUMP
+            cpu->PC = readReg(cpu, ra);
+            break;
+        }
+        case 0x16: {
+            // JEQ
+            if(cpu->flags & F_Z){
+                cpu->PC = cpu->PC + (sext11(imm11) << 1);
+            }
+            break;
+        }
+        case 0x17: {
+            // JNE
+            if(!(cpu->flags & F_Z)){
+                cpu->PC = cpu->PC + (sext11(imm11) << 1);
+            }
+            break;
+        }
+        case 0x18: {
+            //JLT
+            if(cpu->flags & F_N){
+                cpu->PC = cpu->PC + (sext11(imm11) << 1);
+            }   
+            break;
+        }
+        case 0x19: {
+            // JGT
+            if(!(cpu->flags & F_N) && !(cpu->flags & F_Z)){
+                cpu->PC = cpu->PC + (sext11(imm11) << 1);
+            }
+            break;
+        }
+        case 0x1A: {
+            // DIV
+            uint16_t b = readReg(cpu, rb);
+            uint16_t c = readReg(cpu, rc);
+            if(c == 0){
+                printf("Division by zero at PC = 0x%04X\n", cpu->PC - 2);
+                return -1;
+            }
+            uint16_t res, rem;
+            if(option & 0x01){
+                res = (int16_t)b / (int16_t)c;
+                rem = (int16_t)b % (int16_t)c;
+            } else {
+                res = b / c;
+                rem = b % c;
+            }
+            writeReg(cpu, ra, res);
+            if(ra != R7){
+                writeReg(cpu, (ra + 1) & 0x07, rem);
+            }
+            uint16_t flagTarget = (option & 0x02) && (ra != R7) ? rem : res;
+            setZeroSign(cpu, flagTarget);
+            break;
+        }
+        case 0x1B : {
+            // ANDI
+            uint16_t a = readReg(cpu, ra);
+            uint16_t res = a & imm8;
+            writeReg(cpu, ra, res);
+            setZeroSign(cpu, res);
+            break;
+        }
+        case 0x1C: {
+            // TST
+            uint16_t a = readReg(cpu, ra);
+            uint16_t b = readReg(cpu, rb);
+            uint16_t res = a & b;
+            setZeroSign(cpu, res);
+            break;
+        }
+        case 0x1D: {
+            // CMPI
+            uint16_t a = readReg(cpu, ra);
+            uint32_t fullRes = (uint32_t)a - sext8(imm8);
+            uint16_t res = (uint16_t)fullRes;
+            setFlags(cpu, res, fullRes, SUB_OVERFLOW(a, sext8(imm8), res));
             break;
         }
         case 0x1E: {

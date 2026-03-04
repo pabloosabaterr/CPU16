@@ -54,6 +54,14 @@ static inline uint16_t sext5(uint8_t imm5){
     return (imm5 & 0x10) ? (int16_t)(imm5 | 0xFFE0) : (int16_t)imm5;
 }
 
+static inline uint16_t sext8(uint8_t imm8){
+    return (imm8 & 0x80) ? (int16_t)(imm8 | 0xFF00) : (int16_t)imm8;
+}
+
+static inline uint16_t sext11(uint16_t imm11){
+    return (imm11 & 0x400) ? (int16_t)(imm11 | 0xF800) : (int16_t)imm11;
+}
+
 static inline void setZeroSign(CPU *restrict cpu, uint16_t res){
     cpu->flags = 0;
     if(res == 0) cpu->flags |= F_Z;
