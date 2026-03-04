@@ -62,11 +62,12 @@ void init(CPU *restrict cpu);
 int32_t step(CPU *restrict cpu, uint8_t *restrict mem);
 void loadFirm(uint8_t *restrict mem);
 
-static inline void trap(CPU *restrict cpu, uint8_t cause){
+static inline void trap(CPU *restrict cpu, uint8_t *restrict mem, uint8_t cause){
     cpu->EPC = cpu->PC;
     cpu->cause = cause;
     cpu->status = 0;
-    cpu->PC = HANDLER_ADDR;
+    uint16_t addr = cause * 2;
+    cpu->PC = mem[addr] | (mem[addr + 1] << 8);
 }
 
 static inline uint16_t readReg(CPU *restrict cpu, uint8_t reg){

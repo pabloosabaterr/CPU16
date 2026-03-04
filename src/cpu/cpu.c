@@ -13,71 +13,78 @@ void init(CPU *restrict cpu){
 }
 
 void loadFirm(uint8_t *restrict mem){
+
+    // Exception vector table at 0x0000
+    uint16_t vec[] = {
+        0x0100,  // cause 0: SYSCALL
+        0x011E,  // cause 1: Illegal opcode
+        0x0120,  // cause 2: Division by zero
+        0x0122,  // cause 3: Memory fault
+    };
+    memcpy(mem, vec, sizeof(vec));
+
+    // Syscall vector table at 0x0008
+    uint16_t syscallVec[] = {
+        0x010C,  // syscall 0: EXIT
+        0x010E,  // syscall 1: PRINT_INT
+        0x0112,  // syscall 2: PRINT_CHAR
+        0x0116,  // syscall 3: READ_INT
+        0x011A,  // syscall 4: READ_CHAR
+    };
+    memcpy(mem + 0x0008, syscallVec, sizeof(syscallVec));
+
     /*
-        Exception handler at 0x0100
+        SYSCALL handler
+        0x0100 : LUI  R4, 0xFF
+        0x0102 : ORI  R4, 0xF0       ; R4 = 0xFFF0 (IO base)
+        0x0104 : ADD  R5, R2, R2     ; R5 = R2 * 2 (byte offset)
+        0x0106 : ADDI R5, R5, 8      ; R5 += 8 (syscall table base)
+        0x0108 : LOAD R5, R5, 0      ; R5 = mem[R5] (handler addr)
+        0x010A : JUMP R5             ; dispatch
 
-        IO BASE
-        0x0100 : LUI R4, 0XFF
-        0x0102 : ORI R4, 0xF0
+        0x010C : HALT                 ; EXIT
+        0x010E : STORE R4, R3, 4     ; PRINT_INT
+        0x0110 : ERET
+        0x0112 : STORE R4, R3, 0     ; PRINT_CHAR
+        0x0114 : ERET
+        0x0116 : LOAD  R1, R4, 4    ; READ_INT
+        0x0118 : ERET
+        0x011A : LOAD  R1, R4, 0    ; READ_CHAR
+        0x011C : ERET
 
-        SYSCALL OPTIONS
-        0x0104 : CMPI R2, 0         ; EXIT
-        0x0106 : JEQ +9             ; 0x011A
-        0x0108 : CMPI R2, 1         ; PRINT_INT
-        0x010A : JEQ +8             ; 0x011C
-        0x010C : CMPI R2, 2         ; PRINT_CHAR
-        0x010E : JEQ +8             ; 0x0120
-        0x0110 : CMPI R2, 3         ; READ_INT
-        0x0112 : JEQ +8             ; 0x0124
-        0x0114 : CMPI R2, 4         ; READ_CHAR
-        0x0116 : JEQ +8             ; 0x0128
-
-        UNKNOWN SYSCALL
-        0x0118 : ERET               ; unknown syscall
-
-        EXIT
-        0x011A : HALT
-
-        PRINT_INT
-        0x011C : STORE R4, R4, 4    ;
-        0x011E : ERET
-
-        PRINT_CHAR
-        0x0120 : STORE R4, R3, 0    ;
-        0x0122 : ERET
-
-        READ_INT
-        0x0124 : LOAD R1, R4, 4     ;
-        0x0126 : ERET
-
-        READ_CHAR
-        0x0128 : LOAD R1, R4, 0     ;
-        0x012A : ERET
+        0x011E : HALT                ; Illegal opcode
+        0x0120 : HALT                ; Division by zero
+        0x0122 : HALT                ; Memory fault
     */
 
     static const uint8_t firm[] = {
+        // SYSCALL dispatch (0x0100)
         0xFF, 0x8C,  // LUI  R4, 0xFF
         0xF0, 0x94,  // ORI  R4, 0xF0
-        0x00, 0xEA,  // CMPI R2, 0
-        0x09, 0xB0,  // JEQ  +9
-        0x01, 0xEA,  // CMPI R2, 1
-        0x08, 0xB0,  // JEQ  +8
-        0x02, 0xEA,  // CMPI R2, 2
-        0x08, 0xB0,  // JEQ  +8
-        0x03, 0xEA,  // CMPI R2, 3
-        0x08, 0xB0,  // JEQ  +8
-        0x04, 0xEA,  // CMPI R2, 4
-        0x08, 0xB0,  // JEQ  +8
-        0x01, 0xF0,  // ERET
+        0x48, 0x05,  // ADD  R5, R2, R2
+        0xA8, 0x7D,  // ADDI R5, R5, 8
+        0xA0, 0x5D,  // LOAD R5, R5, 0
+        0x00, 0xAD,  // JUMP R5
+        // EXIT (0x010C)
         0x00, 0xF8,  // HALT
+        // PRINT_INT (0x010E)
         0x64, 0x64,  // STORE R4, R3, 4
         0x01, 0xF0,  // ERET
+        // PRINT_CHAR (0x0112)
         0x60, 0x64,  // STORE R4, R3, 0
         0x01, 0xF0,  // ERET
+        // READ_INT (0x0116)
         0x84, 0x59,  // LOAD  R1, R4, 4
         0x01, 0xF0,  // ERET
+        // READ_CHAR (0x011A)
         0x80, 0x59,  // LOAD  R1, R4, 0
         0x01, 0xF0,  // ERET
+        // Illegal opcode (0x011E)
+        0x00, 0xF8,  // HALT
+        // Division by zero (0x0120)
+        0x00, 0xF8,  // HALT
+        // Memory fault (0x0122)
+        0x00, 0xF8,  // HALT
     };
     memcpy(mem + HANDLER_ADDR, firm, sizeof(firm));
 }
@@ -259,7 +266,7 @@ int32_t step(CPU *restrict cpu, uint8_t *restrict mem){
             uint16_t addr = readReg(cpu, rb) + sext5(imm5);
             if(addr >= IO_UART_DATA){
                 if(cpu->status & MUSER){
-                    trap(cpu, CMEM_FAULT);
+                    trap(cpu, mem, CMEM_FAULT);
                 }else {
                     writeReg(cpu, ra, IOread(addr));
                 }
@@ -275,7 +282,7 @@ int32_t step(CPU *restrict cpu, uint8_t *restrict mem){
             uint16_t val = readReg(cpu, rb);
             if(addr >= IO_UART_DATA){
                 if(cpu->status & MUSER){
-                    trap(cpu, CMEM_FAULT);
+                    trap(cpu, mem, CMEM_FAULT);
                 }else {
                     IOwrite(addr, val);
                 }
@@ -384,7 +391,7 @@ int32_t step(CPU *restrict cpu, uint8_t *restrict mem){
             uint16_t b = readReg(cpu, rb);
             uint16_t c = readReg(cpu, rc);
             if(c == 0){
-                trap(cpu, CDIV_ZERO);
+                trap(cpu, mem, CDIV_ZERO);
                 return -1;
             }
             uint16_t res, rem;
@@ -436,7 +443,7 @@ int32_t step(CPU *restrict cpu, uint8_t *restrict mem){
                     cpu->status |= MUSER; 
                 }
             } else {
-                trap(cpu, CSYSCALL);
+                trap(cpu, mem, CSYSCALL);
             }
             break;
         }
@@ -445,7 +452,7 @@ int32_t step(CPU *restrict cpu, uint8_t *restrict mem){
             return 0;
         }
         default: {
-            trap(cpu, CILL_OP);
+            trap(cpu, mem, CILL_OP);
             return -1;
         }
     }
