@@ -22,7 +22,7 @@
 
 ## 3. Stack
 
-- SP starts at `0xFFFE` and grows downward.
+- SP starts at `0xFFF0` and grows downward.
 
 ## 4. Data
 
